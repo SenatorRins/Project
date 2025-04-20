@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 import asyncpg
+import json
+from datetime import datetime
 
 '''CREATE TABLE cars (
   id INT PRIMARY KEY,
@@ -26,32 +28,32 @@ app = FastAPI()
 #--- ЧТЕНИЕ ---
 
 async def select_cars(conn):
-    cars = await conn.fetch(f"SELECT * FROM cars")
+    cars = await conn.fetch(f"SELECT * FROM semyshev_subachev.cars")
     return cars
 async def select_accidents(conn):
-    accidents = await conn.fetch(f"SELECT * FROM accidents")
+    accidents = await conn.fetch(f"SELECT * FROM semyshev_subachev.accidents")
     return accidents
 async def select_car(conn, car_id):
-    car = await conn.fetch(f"SELECT * FROM cars WHERE id = $1", int(car_id))
+    car = await conn.fetch(f"SELECT * FROM semyshev_subachev.cars WHERE id = $1", int(car_id))
     return car
 async def select_car_accidents(conn, car_id):
-    accidents = await conn.fetch(f"SELECT * FROM accidents WHERE car_id = $1", int(car_id))
+    accidents = await conn.fetch(f"SELECT * FROM semyshev_subachev.accidents WHERE $1 = ANY(car_ids)", int(car_id))
     return accidents
 
 #--- ОБНОВЛЕНИЕ ---
 
 async def update_accidents(conn, car_id, accident_id):
-    query = 'UPDATE cars SET accident_ids = array_append(accident_ids, $2) WHERE id = $1'
+    query = 'UPDATE semyshev_subachev.cars SET accident_ids = array_append(accident_ids, $2) WHERE id = $1'
     return await conn.fetchval(query, car_id, accident_id)
 
 #--- СОЗДАНИЕ ---
 
 async def insert_car(conn, model, year, color, plate_number, car_type, accident_ids):
-    query = "INSERT INTO cars (model, year, color, plate_number, car_type, accident_ids) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;"
-    car_id = await conn.fetchval(query, model, year, color, plate_number, car_type, accident_ids)
+    query = "INSERT INTO semyshev_subachev.cars (model, year, color, plate_number, car_type, accident_ids) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;"
+    car_id = await conn.fetchval(query, model, datetime.strptime(year, "%d.%m.%Y").date(), color, plate_number, car_type, json.loads(accident_ids))
     return car_id
 async def insert_accident(conn, car_ids, accident_date, damage_description):
-    query = "INSERT INTO accidents (car_ids, accident_date, damage_description) VALUES ($1, $2, $3) RETURNING id;"
+    query = "INSERT INTO semyshev_subachev.accidents (car_ids, accident_date, damage_description) VALUES ($1, $2, $3) RETURNING id;"
     accident_id = await conn.fetchval(query, car_ids, accident_date, damage_description)
     for car_id in car_ids:
         await update_accidents(conn, car_id, accident_id)
@@ -60,8 +62,8 @@ async def insert_accident(conn, car_ids, accident_date, damage_description):
 #--- УДАЛЕНИЕ ---
 
 async def remove_car(conn, car_id):
-    car = await conn.fetchval(f'DELETE FROM cars WHERE id = $1', int(car_id))
-    accidents = await conn.fetchval(f'DELETE FROM accidents WHERE car_id = $1', int(car_id))
+    await conn.fetchval(f'DELETE FROM semyshev_subachev.cars WHERE id = $1', int(car_id))
+    await conn.fetchval(f'DELETE FROM semyshev_subachev.accidents WHERE $1 = ANY(car_ids)', int(car_id))
     return "Removed car!"
 
 
